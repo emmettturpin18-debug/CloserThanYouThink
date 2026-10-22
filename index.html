@@ -1,0 +1,205 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Closer Than You Think</title>
+<style>
+:root{--c:#c0392b;--bg:#fff3d6;--ink:#3b2412;--cr:#d9a55b;--br:#8a4b1f}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.45 system-ui,Segoe UI,Arial,sans-serif;padding-bottom:84px}
+h1,h2,.px{font-family:"Courier New",monospace;font-weight:900;text-transform:uppercase;letter-spacing:1px;text-shadow:2px 2px 0 var(--cr)}
+main{max-width:640px;margin:0 auto;padding:16px}
+button,input{font:inherit}button{min-height:48px;min-width:48px;padding:10px 16px;border:3px solid var(--br);background:#fff;color:var(--ink);border-radius:6px;box-shadow:0 4px 0 var(--br);cursor:pointer;margin:4px 0}
+button:active{transform:translateY(3px);box-shadow:0 1px 0 var(--br)}button:disabled{opacity:.5;cursor:not-allowed}
+button.big{width:100%;font-size:1.3rem;padding:18px;background:#ffd98a}button.go{background:#8bd17c}button.sel{background:#ffd98a;outline:3px solid var(--ink)}
+:focus-visible{outline:4px solid #1a5fd0;outline-offset:2px}
+input[type=text]{width:100%;min-height:52px;padding:10px;border:3px solid var(--br);border-radius:6px;font-size:1.2rem}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--br);padding:4px}nav button{flex:1;margin:0 2px;font-size:.8rem;padding:4px;box-shadow:none}nav button[aria-current=page]{background:#ffd98a;font-weight:800}
+.card{background:#fff;border:3px solid var(--br);border-radius:8px;padding:12px;margin:10px 0}.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}.opts button{font-size:1.2rem;min-height:72px}
+.msg{color:#a01010;font-weight:700}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid var(--cr);padding:4px;text-align:left}
+.tl{position:relative;height:18px;background:#e9d3a5;border:2px solid var(--br);border-radius:9px;margin:8px 0}.tl i{position:absolute;top:0;bottom:0;background:#4a9d3f;opacity:.8}
+svg.pie{width:min(280px,80vw);display:block;margin:0 auto}.fill{transition:transform .5s ease-out}
+@media (prefers-reduced-motion:reduce){.fill{transition:none}button:active{transform:none}}.noanim .fill{transition:none}
+.bal{display:flex;gap:10px;align-items:center}.spr{image-rendering:pixelated;display:block}.stage{display:inline-block;border:3px solid var(--br);border-radius:8px;padding:2px}
+.bar{height:16px;background:#e9d3a5;border:2px solid var(--br);border-radius:8px;overflow:hidden}.bar i{display:block;height:100%;background:#4a9d3f}
+.fxl{position:fixed;inset:0;pointer-events:none;z-index:9}.fxl i{position:absolute;width:8px;height:8px;animation:fl .7s ease-out forwards}@keyframes fl{to{transform:translate(var(--x),var(--y));opacity:0}}
+details.card summary{cursor:pointer;min-height:44px;font-weight:800}.hint{background:#e8f6e0}
+</style></head><body><main id="app" aria-live="polite"></main>
+<nav id="nav" aria-label="Main"></nav>
+<script>
+/* ===== LOGIC (pure, tested in node) ===== */
+const MN=['january','february','march','april','may','june','july','august','september','october','november','december'];
+const ONES='zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen'.split(' ');
+const TENS={twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
+const ORD={first:1,second:2,third:3,fifth:5,eighth:8,ninth:9,twelfth:12,twentieth:20,thirtieth:30};
+function wv(w){if(w==='oh')return[0,0];if(w==='hundred')return[100,0];if(w==='thousand')return[1000,0];if(ONES.includes(w))return[ONES.indexOf(w),0];if(TENS[w])return[TENS[w],0];
+ if(ORD[w])return[ORD[w],1];if(w.endsWith('th')&&ONES.includes(w.slice(0,-2)))return[ONES.indexOf(w.slice(0,-2)),1];return null}
+function runVal(v){if(v.includes(100)||v.includes(1000)){let t=0,c=0;for(const x of v){if(x===100)c=(c||1)*100;else if(x===1000){t+=(c||1)*1000;c=0}else c+=x}return t+c}
+ if(v.length>1&&v[0]>=15&&v[0]<=20&&(v[1]>=10||v[1]===0)){const r=v.slice(1);return v[0]*100+r.reduce((a,b)=>a+b,0)}return v.reduce((a,b)=>a+b,0)}
+function lev(a,b){const d=[];for(let i=0;i<=a.length;i++){d[i]=[i];for(let j=1;j<=b.length;j++)d[i][j]=i?0:j}
+ for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length]}
+function monthOf(w){if(w.length<3)return 0;for(let i=0;i<12;i++){const m=MN[i];if(w.length<=m.length&&m.startsWith(w))return i+1}
+ if(w.length<4)return 0;let best=0,bd=9;for(let i=0;i<12;i++){const dd=lev(w,MN[i]);if(dd<bd){bd=dd;best=i+1}}return bd<=(w.length<=5?1:2)?best:0}
+const okDay=(y,m,d)=>!d||(m>0&&d>=1&&d<=new Date(Date.UTC(y,m,0)).getUTCDate());
+function parseDate(raw){
+ let s=String(raw||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();if(!s)return{err:'Type a date first.'};
+ let m=s.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);if(m){const[y,mo,d]=[+m[1],+m[2],+m[3]];return mo>=1&&mo<=12&&okDay(y,mo,d)?{cands:[{y,m:mo,d,p:3}]}:{err:'That date does not exist.'}}
+ m=s.match(/\b(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})\b/);if(m){const a=+m[1],b=+m[2],y=+m[3],c=[];
+  if(a<=12&&okDay(y,a,b))c.push({y,m:a,d:b,p:3});if(b<=12&&a!==b&&okDay(y,b,a))c.push({y,m:b,d:a,p:3});return c.length?{cands:c}:{err:'That date does not exist.'}}
+ s=s.replace(/(\d)(st|nd|rd|th)\b/g,'$1').replace(/[^a-z0-9,\s-]/g,' ').replace(/(?<![0-9])-|-(?![0-9])/g,' ').replace(/,/g,' , ');
+ const tk=s.split(/\s+/).filter(Boolean),out=[];let run=[];
+ const fl=()=>{if(run.length)out.push(String(runVal(run)));run=[]};
+ for(const t of tk){if(t===','){fl();continue}const w=wv(t);if(w){run.push(w[0]);if(w[1])fl()}else if(t==='and'&&run.length){}else{fl();out.push(t)}}fl();
+ const ys=[],ms=[],ds=[];for(const t of out){if(/^\d+$/.test(t)){const n=+t;if(t.length===4&&n>=1000&&n<=2100)ys.push(n);else if(n>=1&&n<=31&&t.length<=2)ds.push(n)}else{const mo=monthOf(t);if(mo)ms.push(mo)}}
+ const uy=[...new Set(ys)],um=[...new Set(ms)];if(!uy.length)return{err:'I could not find a year (like 1969). Try "July 20, 1969".'};
+ if(ds.length&&!um.length)return{err:'I found a day but no month. Try "July 20, 1969".'};if(ds.length>1&&new Set(ds).size>1)return{err:'I found more than one day. Please type just one date.'};
+ const c=[];for(const y of uy)if(!um.length)c.push({y,m:0,d:0,p:1});else for(const mo of um){const d=ds[0]||0;if(okDay(y,mo,d))c.push({y,m:mo,d,p:d?3:2})}
+ return c.length?{cands:c}:{err:'That date does not exist.'}}
+const U=(a,p)=>Date.UTC(a.y,p>=2?a.m-1:0,p>=3?a.d:1);
+const TOL={easy:40,medium:20,hard:8}; /* years of tolerance */
+function closeness(q,a,diff){const pc=Math.min(q.p,a.p),dy=Math.abs(U(q,pc)-U(a,pc))/864e5/365.25,tol=TOL[diff];
+ const cap=pc===q.p?1:(pc===1?.5:.75);return dy===0?cap:Math.min(cap,Math.max(0,1-dy/tol))}
+function points(q,a,diff){return a?+(0.01+0.09*closeness(q,a,diff)).toFixed(4):0.01}
+const MON=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const fmt=(a,p=a.p)=>p===3?`${MON[a.m-1]} ${a.d}, ${a.y}`:p===2?`${MON[a.m-1]} ${a.y}`:String(a.y);
+/* ===== DATA: title|clue|year|month|day|wikipedia page|kid-friendly|topic|region ===== */
+const RAW=`Battle of Mohács|A big battle changed who ruled Hungary.|1526|8|29|Battle_of_Mohács|0|politics|Europe
+Copernicus book on the Sun|A book said the planets go around the Sun.|1543|0|0|De_revolutionibus_orbium_coelestium|0|science|Europe
+Spanish Armada|A huge fleet of ships sailed to invade England.|1588|0|0|Spanish_Armada|0|exploration|Europe
+Galileo's telescope discoveries|He looked at Jupiter's moons through a telescope.|1610|0|0|Sidereus_Nuncius|1|science|Europe
+Great Fire of London|A fire spread through London's wooden houses.|1666|9|2|Great_Fire_of_London|0|society|Europe
+Newton's Principia|A book explained gravity and motion.|1687|0|0|Philosophiæ_Naturalis_Principia_Mathematica|0|science|Europe
+US Declaration of Independence|Colonies announced they were a new country.|1776|7|4|United_States_Declaration_of_Independence|0|politics|N. America
+Storming of the Bastille|Crowds took a Paris fortress at the start of a revolution.|1789|7|14|Storming_of_the_Bastille|0|politics|Europe
+First smallpox vaccination|Edward Jenner tried the first vaccine.|1796|5|14|Edward_Jenner|0|science|Europe
+Haiti declares independence|Haiti became the first free Black republic.|1804|1|1|Haitian_Declaration_of_Independence|0|politics|Caribbean
+Battle of Waterloo|Napoleon lost his last big battle.|1815|6|18|Battle_of_Waterloo|0|politics|Europe
+Frankenstein published|Mary Shelley wrote a famous science-fiction story.|1818|0|0|Frankenstein|0|culture|Europe
+Beethoven's Ninth Symphony premiere|The "Ode to Joy" symphony was first played.|1824|5|7|Symphony_No._9_(Beethoven)|0|art|Europe
+Stockton and Darlington Railway opens|Steam trains began carrying passengers.|1825|9|27|Stockton_and_Darlington_Railway|1|invention|Europe
+Darwin's Origin of Species|A book explained how living things change over time.|1859|11|24|On_the_Origin_of_Species|0|science|Europe
+Emancipation Proclamation|Lincoln declared enslaved people in rebel states free.|1863|1|1|Emancipation_Proclamation|0|society|N. America
+Transcontinental Railroad finished|Two railroads met to cross America.|1869|5|10|First_transcontinental_railroad|1|invention|N. America
+Suez Canal opens|A ship canal joined two seas.|1869|11|17|Suez_Canal|1|exploration|Africa
+Telephone patent|Alexander Graham Bell got a patent for the telephone.|1876|3|7|Alexander_Graham_Bell|1|invention|N. America
+Practical electric light bulb|Edison's bulb could glow for many hours.|1879|0|0|Incandescent_light_bulb|1|invention|N. America
+Statue of Liberty dedicated|A giant copper statue was unveiled in New York.|1886|10|28|Statue_of_Liberty|1|culture|N. America
+Eiffel Tower completed|A tall iron tower was finished in Paris.|1889|3|31|Eiffel_Tower|1|culture|Europe
+First modern Olympics|The Olympic Games returned in Athens.|1896|4|6|1896_Summer_Olympics|1|culture|Europe
+Wright brothers' first flight|A motor airplane flew for the first time.|1903|12|17|Wright_brothers|1|invention|N. America
+Einstein's special relativity|Einstein published ideas about space and time.|1905|0|0|Annus_mirabilis_papers|0|science|Europe
+Ford Model T launched|A car many families could afford went on sale.|1908|10|1|Ford_Model_T|1|invention|N. America
+Titanic sinks|A famous ocean liner hit an iceberg.|1912|4|15|Titanic|0|society|N. Atlantic
+Penicillin discovered|Alexander Fleming noticed mould that killed germs.|1928|9|0|Penicillin|0|science|Europe
+End of World War II in Japan|Japan formally surrendered, ending the war.|1945|9|2|Surrender_of_Japan|0|politics|Asia
+United Nations founded|Countries made a group to work for peace.|1945|10|24|United_Nations|0|politics|World
+India becomes independent|India ended British rule.|1947|8|15|Independence_Day_(India)|0|politics|Asia
+DNA structure paper|Scientists showed DNA is a double helix.|1953|4|25|Molecular_Structure_of_Nucleic_Acids:_A_Structure_for_Deoxyribose_Nucleic_Acid|0|science|Europe
+First climb of Mount Everest|Two climbers reached the top of the tallest mountain.|1953|5|29|Mount_Everest|1|exploration|Asia
+Rosa Parks refuses to give up her seat|A bus protest began in Alabama.|1955|12|1|Rosa_Parks|0|society|N. America
+Sputnik 1 launched|The first satellite beeped in space.|1957|10|4|Sputnik_1|1|exploration|Europe
+Yuri Gagarin orbits Earth|The first person flew in space.|1961|4|12|Yuri_Gagarin|1|exploration|Europe
+"I Have a Dream" speech|Martin Luther King Jr. spoke in Washington.|1963|8|28|I_Have_a_Dream|0|society|N. America
+First Moon landing|People walked on the Moon for the first time.|1969|7|20|Apollo_11|1|exploration|Space
+First ARPANET message|Two computers talked, an early step to the internet.|1969|10|29|ARPANET|0|invention|N. America
+World Wide Web proposed|Tim Berners-Lee wrote a plan for the Web.|1989|3|12|Tim_Berners-Lee|0|invention|Europe
+Fall of the Berlin Wall|People crossed the wall that divided Berlin.|1989|11|9|Berlin_Wall|0|politics|Europe
+Mandela released|Nelson Mandela walked free from prison.|1990|2|11|Nelson_Mandela|0|society|Africa
+Hubble Space Telescope launched|A telescope was sent up to take sharp pictures of space.|1990|4|24|Hubble_Space_Telescope|1|exploration|Space
+Human Genome Project completed|Scientists finished reading human DNA.|2003|0|0|Human_Genome_Project|0|science|World
+iPhone unveiled|Steve Jobs showed the first iPhone.|2007|1|9|IPhone_(1st_generation)|1|invention|N. America
+Higgs boson announced|Scientists announced finding a tiny particle.|2012|7|4|Higgs_boson|0|science|Europe
+Gravitational waves announced|Scientists heard ripples in space itself.|2016|2|11|First_observation_of_gravitational_waves|0|science|World
+First picture of a black hole|People saw a picture of a black hole's shadow.|2019|4|10|Event_Horizon_Telescope|1|science|Space
+Ingenuity flies on Mars|A small helicopter flew on another planet.|2021|4|19|Ingenuity_(helicopter)|1|exploration|Space
+James Webb telescope launched|A huge new space telescope blasted off.|2021|12|25|James_Webb_Space_Telescope|1|exploration|Space`;
+const EV=RAW.split('\n').map((l,i)=>{const f=l.split('|'),y=+f[2],m=+f[3],d=+f[4];return{id:'E'+String(i+1).padStart(4,'0'),t:f[0],c:f[1],y,m,d,p:d?3:m?2:1,w:'https://en.wikipedia.org/wiki/'+f[5],k:+f[6],tp:f[7],rg:f[8]}});
+/* ===== APP ===== */
+const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let st;try{st=JSON.parse(localStorage.getItem('ctyt'))}catch(e){}st=st||{};st.h=st.h||[];st.pf=Object.assign({pie:'#c0392b',snd:true,anim:true,hair:'#b5451b'},st.pf);
+const save=()=>{try{localStorage.setItem('ctyt',JSON.stringify(st))}catch(e){}};
+st.p=Object.assign({coins:0,xp:0,own:['c1','bakery','crumb'],char:'c1',stage:'bakery',fx:'crumb',ch:{}},st.p);const P=st.p;
+const IT=[['c1','Chef Ember','chars',0],['c2','Shadow Sam','chars',30],['c3','Sunny Sage','chars',45],['c4','River Rae','chars',60],['c5','Poppy Blue','chars',80],['c6','Cozy Cap','chars',100],['bakery','Bakery','stage',0,'#ffd98a'],['sky','Sky','stage',25,'#9ad0f5'],['night','Night','stage',40,'#6a6aa8'],['mint','Mint','stage',50,'#a8e6c3'],['crumb','Crumbs','fx',0,'#8a4b1f'],['spark','Sparkles','fx',40,'#f5d90a'],['conf','Confetti','fx',70,'#e0457b']];
+const KEY={chars:'char',stage:'stage',fx:'fx'};
+const AB=[['lens','History Lens','Shows the topic and region.',3,'L'],['decade','Decade Peek','Shows the decade.',3,'D'],['whisk','Option Whisk','Removes one wrong choice (multiple choice only).',2,'W'],['second','Second Chance','Lets you check and edit a typed answer once (typing only).',4,'S'],['compass','Chrono Compass','Says if it was earlier or later than a year.',3,'C'],['gold','Golden Crust','Adds up to 1% of pie to this slice. Never above a full slice.',6,'G']];
+const lvOf=x=>{let l=1,n=x;while(n>=40+20*l){n-=40+20*l;l++}return{l,n,need:40+20*l}};
+const GIFT={3:'sky',5:'c2',8:'spark'};
+function addCoins(n){P.coins+=n;S.rw.coins+=n}
+function addXP(x){const b=lvOf(P.xp).l;P.xp+=x;S.rw.xp+=x;const a=lvOf(P.xp).l;for(let l=b+1;l<=a;l++){S.rw.unl.push('Reached level '+l+'!');const k=l%2?'compass':'decade';P.ch[k]=(P.ch[k]||0)+1;S.rw.unl.push('+1 free '+AB.find(z=>z[0]===k)[1]);const g=GIFT[l];if(g&&!P.own.includes(g)){P.own.push(g);S.rw.unl.push('New item: '+IT.find(z=>z[0]===g)[1])}}}
+function burst(n){if(RM||!st.pf.anim)return;const f=IT.find(i=>i[0]===P.fx),cols=P.fx==='conf'?['#e0457b','#4a9d3f','#1a5fd0','#f5d90a']:[f[4]],c=document.createElement('div');c.className='fxl';c.setAttribute('aria-hidden','true');for(let i=0;i<(n||14);i++){const e=document.createElement('i');e.style.cssText=`left:50%;top:40%;background:${cols[i%cols.length]};--x:${rnd(200)-100}px;--y:${rnd(160)-110}px`;c.appendChild(e)}document.body.appendChild(c);setTimeout(()=>c.remove(),800)}
+const stCol=()=>(IT.find(i=>i[0]===P.stage)||IT[6])[4];
+const spr=w=>`<span class="stage" style="background:${stCol()}"><img class="spr" src="assets/chars/${P.char}.png" alt="Your character" width="${w}" height="${Math.round(w*130/110)}" onerror="this.style.display='none'"></span>`;
+function top(w){const v=lvOf(P.xp);return `<div class="card bal">${spr(w||44)}<div style="flex:1"><b>Level ${v.l}</b> · <b>Pie Coins: ${P.coins}</b><div class="bar" role="progressbar" aria-valuenow="${v.n}" aria-valuemax="${v.need}" aria-label="XP"><i style="width:${v.n/v.need*100}%"></i></div><small>${v.n}/${v.need} XP</small></div></div>`}
+function rewards(){const v=lvOf(P.xp),u=[...new Set(S.used)];return `<div class="card"><h2>Rewards</h2><p>Pie Coins earned: <b>${S.rw.coins}</b></p><p>XP gained: <b>${S.rw.xp}</b></p><div class="bar"><i style="width:${v.n/v.need*100}%"></i></div><p>Level ${v.l}: ${v.n}/${v.need} XP</p><p>Abilities used: ${u.length?esc(u.join(', '))+' (casual round, not ranked)':'none (ranked round)'}</p>${S.rw.unl.length?'<p><b>Unlocked!</b></p><ul>'+S.rw.unl.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':''}</div>`}
+function shop(){let h=top(60)+'<h2>Customize &amp; Shop</h2>'+(S.msg?`<p class="msg" style="color:#1a6b1a" role="status">${esc(S.msg)}</p>`:'')+'<div role="group" aria-label="Categories">'+[['chars','Characters'],['stage','Stages'],['fx','Effects'],['set','Settings']].map(([k,l])=>`<button class="${S.tab===k?'sel':''}" aria-pressed="${S.tab===k}" data-a="tab" data-v="${k}">${l}</button>`).join(' ')+'</div>';
+ if(S.tab==='set')h+=`<div class="card"><b>Pie filling</b><br>`+[['#c0392b','Cherry'],['#6a3d9a','Blueberry'],['#d98e04','Peach']].map(([c,n])=>`<button class="${st.pf.pie===c?'sel':''}" data-a="pie" data-v="${c}">${n}</button>`).join(' ')+`</div><div class="card"><button data-a="snd" aria-pressed="${st.pf.snd}">Sound: ${st.pf.snd?'On':'Off'}</button> <button data-a="anim" aria-pressed="${st.pf.anim}">Animation: ${st.pf.anim&&!RM?'On':'Off'}</button>${RM?'<br><small>Your device asks for reduced motion.</small>':''}</div>`;
+ else h+='<div class="opts">'+IT.filter(i=>i[2]===S.tab).map(i=>{const own=P.own.includes(i[0]),eq=P[KEY[S.tab]]===i[0],pv=i[2]==='chars'?`<img class="spr" src="assets/chars/${i[0]}.png" width="55" height="65" alt="">`:`<span class="stage" style="background:${i[4]};width:55px;height:65px"></span>`;return `<div class="card">${pv}<b>${i[1]}</b><br>${eq?'Equipped':own?'Owned':'Locked · '+i[3]+' coins'}<br>`+(eq?'':own?`<button data-a="equip" data-v="${i[0]}">Equip</button>`:`<button data-a="buy" data-v="${i[0]}"${P.coins<i[3]?' disabled':''}>Buy for ${i[3]}</button>`)+'</div>'}).join('')+'</div>';
+ return h+'<button class="big go" data-a="go" data-v="mode">Back to Play</button>'}
+function abUI(){return `<details class="card"><summary>Abilities (optional)</summary><p><small>Casual only: rounds that use abilities are not ranked. Free charges are used first, otherwise Pie Coins.</small></p>`+AB.map(a=>{const f=P.ch[a[0]]>0,bad=(a[0]==='whisk'&&S.mode!=='easy')||(a[0]==='second'&&S.mode!=='hard'),dis=S.ab[a[0]]||bad||(!f&&P.coins<a[3]);return `<button data-a="ab" data-v="${a[0]}"${dis?' disabled':''} aria-label="${a[1]}. ${a[2]}"><b>${a[4]}</b> ${a[1]} · ${f?P.ch[a[0]]+' free':a[3]+' coins'}<br><small>${a[2]}</small></button>`}).join('<br>')+'</details>'}
+const RM=matchMedia('(prefers-reduced-motion:reduce)').matches;
+let S={tab:'chars',hints:[],ab:{},used:[],rw:{coins:0,xp:0,unl:[]},scr:'home',mode:'easy',diff:'easy',np:1,names:['','','',''],msg:'',locked:false};
+const rnd=n=>Math.floor(Math.random()*n),shuf=a=>a.map(x=>[Math.random(),x]).sort((a,b)=>a[0]-b[0]).map(x=>x[1]);
+const NAV=[['home','Home'],['mode','Play'],['custom','Customize'],['rank','Rankings'],['how','How to Play']];
+const bell=()=>{if(!st.pf.snd)return;try{const a=new AudioContext(),o=a.createOscillator();o.frequency.value=660;o.connect(a.destination);o.start();o.stop(a.currentTime+.12)}catch(e){}};
+function opts(q){const o=[{y:q.y,m:q.m,d:q.d,p:q.p}],rg={easy:[40,120],medium:[12,45],hard:[3,14]}[S.diff],seen=new Set([q.y]);let g=0;
+ while(o.length<4&&g++<500){const off=(rg[0]+rnd(rg[1]-rg[0]))*(rnd(2)?1:-1),y=q.y+off;if(y<1526||y>2026||seen.has(y))continue;seen.add(y);o.push({y,m:q.p>1?1+rnd(12):0,d:q.p>2?1+rnd(28):0,p:q.p})}
+ return o.sort((a,b)=>U(a,3)-U(b,3))}
+function pie(sc,cur,fresh){const R=80,pt=(i,r)=>{const a=(-90+i*36)*Math.PI/180;return[(100+r*Math.cos(a)).toFixed(2),(100+r*Math.sin(a)).toFixed(2)]};
+ let h='<svg class="pie" viewBox="0 0 200 200" role="img" aria-label="Pie with 10 slices"><circle cx="100" cy="100" r="95" fill="#d9a55b" stroke="#8a4b1f" stroke-width="5"/><circle cx="100" cy="100" r="85" fill="#f6e3b4" stroke="#8a4b1f" stroke-width="2"/>';
+ for(let i=0;i<10;i++){const a=pt(i,R),b=pt(i+1,R),d=`M100 100L${a[0]} ${a[1]}A${R} ${R} 0 0 1 ${b[0]} ${b[1]}Z`,s=sc[i],f=s?Math.min(1,s.pts/.1):0;
+  h+=`<path d="${d}" fill="#fbefd0" stroke="#8a4b1f" stroke-width="1.5"/><path class="fill" data-f="${f}" d="${d}" fill="${st.pf.pie}" stroke="#5b2a0c" stroke-width="1" style="transform-origin:100px 100px;transform:scale(${i===fresh&&!RM&&st.pf.anim?0:f})"/>`;
+  if(i===cur)h+=`<path d="${d}" fill="none" stroke="#1a5fd0" stroke-width="3" stroke-dasharray="4 3"/>`}
+ for(let i=0;i<10;i++){const a=pt(i,R);h+=`<line x1="100" y1="100" x2="${a[0]}" y2="${a[1]}" stroke="#8a4b1f" stroke-width="1"/>`}
+ return h+'<circle cx="100" cy="100" r="8" fill="#d9a55b" stroke="#8a4b1f" stroke-width="2"/></svg>'}
+const tot=a=>a.reduce((s,x)=>s+(x?x.pts:0),0),pc=v=>(v*100).toFixed(1)+'%';
+function band(p){return p>=90?'90–100% Pie Master':p>=70?'70–89% Super Baker':p>=40?'40–69% Good Cook':'10–39% Keep Baking'}
+function view(){const q=S.qs&&S.qs[S.qi],h=[];
+ switch(S.scr){
+ case 'home':h.push(top(70)+`<h1>Closer Than You Think</h1><p>Guess when it happened. The closer you are, the more pie you win! Sample bank: ${EV.length} events, 1526 through December 25, 2021.</p><button class="big go" data-a="m" data-v="easy">Easy Mode<br><small>Pick a date</small></button><button class="big" data-a="m" data-v="hard">Hard Mode<br><small>Type a date</small></button>`);break;
+ case 'mode':h.push(`<h2>Choose a mode</h2><button class="big go" data-a="m" data-v="easy">Easy Mode – multiple choice</button><button class="big" data-a="m" data-v="hard">Hard Mode – type the date</button>`);break;
+ case 'diff':h.push(`<h2>${S.mode==='easy'?'Easy':'Hard'} Mode: how hard?</h2>`+['easy','medium','hard'].map(d=>`<button class="big" data-a="d" data-v="${d}">${d[0].toUpperCase()+d.slice(1)}</button>`).join('')+`<button data-a="go" data-v="mode">Back</button>`);break;
+ case 'setup':h.push(`<h2>Players</h2><div role="group" aria-label="Number of players">`+[1,2,3,4].map(n=>`<button class="${S.np===n?'sel':''}" data-a="np" data-v="${n}">${n}</button>`).join(' ')+`</div>`+[...Array(S.np)].map((_,i)=>`<label>Nickname ${i+1} (no real names)<input type="text" maxlength="12" data-n="${i}" value="${esc(S.names[i])}" placeholder="Player ${i+1}"></label>`).join('')+`<button class="big go" data-a="start">Start 10-question round</button><button data-a="go" data-v="diff">Back</button>`);break;
+ case 'play':{const pn=S.names[S.pi];
+  if(S.step==='pass'){h.push(`<div class="card"><h2>Pass to ${esc(pn)}</h2><p>No peeking! Everyone else look away.</p><button class="big go" data-a="ready">I'm ready</button></div>`);break}
+  h.push(top(40)+`<p class="px">Question ${S.qi+1} of ${S.qs.length} · ${esc(pn)}</p>`+pie(S.sc[S.pi],S.qi,S.step==='reveal'?S.qi:-1));
+  if(S.step==='ask'){const e=S.diff;h.push(`<div class="card"><h2>${esc(q.t)}</h2>`+(e!=='hard'?`<p>${esc(q.c)}</p>`:`<p>Region: ${esc(q.rg)} · Topic: ${esc(q.tp)}</p>`)+(e==='easy'?`<div class="tl" aria-hidden="true"><i style="left:${Math.max(0,(q.y-30-1526)/5)}%;width:${Math.min(100,60/5)}%"></i></div><small>Green bar = about when. Left is long ago, right is now. ${q.y<1800?'Long, long ago!':q.y<1950?'A long time ago.':'Not so long ago.'}</small><br><button data-a="say">🔊 Read aloud</button>`:'')+`</div>`);
+   h.push(abUI());S.hints.forEach(t=>h.push(`<p class="card hint">${esc(t)}</p>`));
+   if(S.mode==='easy')h.push(`<div class="opts">`+S.o.map((o,i)=>`<button data-a="pick" data-v="${i}"${S.locked?' disabled':''}>${fmt(o)}</button>`).join('')+`</div>`);
+   else{h.push(`<label>Your date (like "July 20, 1969" or just "1969")<input type="text" id="ans" autocomplete="off" value="${esc(S.txt||'')}"></label>`);if(S.cands)h.push(`<p>Which did you mean?</p>`+S.cands.map((c,i)=>`<button data-a="cand" data-v="${i}">${fmt(c)}</button>`).join(''));
+    h.push(`<button class="big go" data-a="sub"${S.locked?' disabled':''}>Submit Answer</button>`)}
+   if(S.msg)h.push(`<p class="msg" role="alert">${esc(S.msg)}</p>`);h.push(`<button data-a="skip"${S.locked?' disabled':''}>Skip (small slice)</button>`)}
+  else{const r=S.sc[S.pi][S.qi];h.push(`<div class="card"><h2>${r.sk?'Skipped':'You earned '+pc(r.pts)+' of the pie!'}</h2><p>Answer: <b>${fmt(q)}</b>${r.a?`<br>Your guess: ${fmt(r.a)}`:''}</p><p>${esc(q.c)} <a href="${q.w}" target="_blank" rel="noopener">Source</a></p><p>This slice: ${(r.pts*100).toFixed(0)}% of the pie. Total: ${pc(tot(S.sc[S.pi]))}</p></div><button class="big go" data-a="next">${S.qi+1===S.qs.length&&S.pi===S.np-1?'See results':'Next'}</button>`)}
+  h.push(`<button data-a="end">End Round</button>`);break}
+ case 'sum':{const early=S.early,N=S.qs.length;h.push(`<h2>Round summary — ${early?'Incomplete (ended early)':'Completed'}</h2>`);
+  const T=S.sc.map(tot);h.push(rewards());
+  S.names.slice(0,S.np).forEach((n,i)=>{const c=S.sc[i].filter(Boolean).length;h.push(`<div class="card"><b>${esc(n)}</b>: ${pc(T[i])} earned · ${c}/${N} answered · possible ${pc(c*.1)}${early?'':' · '+band(T[i]*100)}${pie(S.sc[i],-1,-1)}</div>`)});
+  if(early)h.push('<p>Incomplete rounds are not compared as winners.</p>');else{const mx=Math.max(...T),w=T.map((t,i)=>t===mx?i:-1).filter(i=>i>=0);h.push(S.np>1?`<h2>${w.length>1?'It\'s a tie!':'Winner: '+esc(S.names[w[0]])}</h2>`:'')}
+  h.push(`<div class="card" style="overflow-x:auto"><table><tr><th>Event</th><th>Date</th>${S.names.slice(0,S.np).map(n=>`<th>${esc(n)}</th>`).join('')}</tr>`+S.qs.map((x,i)=>`<tr><td>${esc(x.t)}</td><td>${fmt(x)}</td>${S.sc.map(s=>`<td>${s[i]?(s[i].a?fmt(s[i].a):'skip'):'—'}</td>`).join('')}</tr>`).join('')+'</table></div><button class="big go" data-a="again">Play Again</button><button class="big" data-a="go" data-v="home">Main Menu</button>');break}
+ case 'custom':h.push(shop());break;
+ case 'rank':{const hs=st.h.filter(x=>x.r!==false).sort((a,b)=>b.s-a.s||b.t-a.t);h.push(`<h2>Rankings</h2><div class="card"><b>This Device</b> (saved only in this browser: nickname, score, mode, difficulty, date, status)<table><tr><th>#</th><th>Nick</th><th>Score</th><th>Mode</th><th>Done?</th></tr>`+(hs.slice(0,10).map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.n)}</td><td>${r.s.toFixed(1)}%</td><td>${r.m}/${r.d}</td><td>${r.c?'Yes':'Incomplete'}</td></tr>`).join('')||'<tr><td colspan=5>No plays yet.</td></tr>')+`</table><small>Ranked table excludes rounds where abilities were used. Sorted by score, then newest. Bands: 10–39%, 40–69%, 70–89%, 90–100%. These are score bands, not percentiles.</small></div><div class="card"><b>Recent plays</b><ul>`+[...st.h].reverse().slice(0,8).map(r=>`<li>${esc(r.n)} ${r.s.toFixed(1)}% ${r.m}/${r.d} ${new Date(r.t).toLocaleDateString()}${r.r===false?' (casual)':''}</li>`).join('')+`</ul></div><div class="card"><b>Global Leaderboard</b><br>Not set up: no shared backend is configured, so nothing here is shared with other players.</div>`);break}
+ case 'how':h.push(`<h2>How to Play</h2><div class="card"><p>Read the event, guess the date. A full pie = 100%; each of 10 questions is worth one slice (10%).</p><p><b>Score per question</b> = 0.01 + 0.09 × closeness. Exact = 0.10 (full slice). Wrong or skipped = 0.01 (10% of a slice). Ended-early unanswered questions earn nothing.</p><p><b>Closeness</b> falls evenly to 0 over a window: Easy 40 years, Medium 20 years, Hard 8 years. Only the precision the question has is compared (year, month, or exact day). Typing less than a question asks for gives partial credit.</p><p><b>Difficulty</b>: Easy shows the clue, a timeline and far-apart choices; Medium shows the clue; Hard shows only the title and region, with close choices. Easy Mode = pick from 4 dates; Hard Mode = type a date like "July twentieth, 1969".</p><p>Pass-and-play for 2–4 players: everyone answers the same questions.</p><p><b>Pie Coins and XP</b> come from every answer (even wrong ones) and from finishing rounds. Spend coins in Customize on characters, stages and effects. Abilities are optional helpers; they never lower the 1% minimum, and Golden Crust never lifts a slice above 10%. Rounds with abilities are casual and not ranked. Your level never locks a difficulty.</p></div>`);break}
+ return h.join('')}
+function render(){$('#app').className=(!st.pf.anim)?'noanim':'';$('#app').innerHTML=view();
+ const act=S.scr==='home'?'home':['mode','diff','setup','play','sum'].includes(S.scr)?'mode':S.scr;
+ $('#nav').innerHTML=NAV.map(([k,l])=>`<button data-a="go" data-v="${k}" ${k===act?'aria-current="page"':''}>${l}</button>`).join('');
+ requestAnimationFrame(()=>document.querySelectorAll('.fill').forEach(e=>e.style.transform=`scale(${e.dataset.f})`));
+ const a=$('#ans');if(S.burst){S.burst=0;burst(10)}if(a&&S.focus){a.focus();S.focus=0}}
+function submit(a){if(S.locked)return;S.locked=true;const q=S.qs[S.qi],sk=!a;let pts=points(q,a,S.diff);if(S.ab.gold&&!sk)pts=Math.min(.1,+(pts+.01).toFixed(4));addCoins(3+(pts>=.08?2:0));addXP(5);save();S.burst=1;S.sc[S.pi][S.qi]={pts,a,sk};S.step='reveal';S.msg='';S.cands=null;S.txt='';S.hints=[];bell();render()}
+function finish(early){S.early=early;const N=S.qs.length;if(!early){addCoins(10);addXP(20)}else addXP(5);save();S.names.slice(0,S.np).forEach((n,i)=>{const c=S.sc[i].filter(Boolean).length;st.h.push({n,s:+(tot(S.sc[i])*100).toFixed(1),m:S.mode,d:S.diff,t:Date.now(),c:!early&&c===N,r:!S.used.length})});st.h=st.h.slice(-200);save();S.scr='sum';render()}
+function act(a,v){switch(a){
+ case 'go':S.scr=v;S.msg='';break;case 'm':S.mode=v;S.scr='diff';break;case 'd':S.diff=v;S.scr='setup';break;case 'np':S.np=+v;break;
+ case 'start':S.names=S.names.map((n,i)=>(n.trim()||'Player '+(i+1)).slice(0,12));{const pool=S.diff==='easy'?[...shuf(EV.filter(e=>e.k)),...shuf(EV.filter(e=>!e.k))]:shuf(EV);S.qs=pool.slice(0,10)}S.sc=S.names.map(()=>[]);S.rw={coins:0,xp:0,unl:[]};S.used=[];S.ab={};S.hints=[];S.qi=0;S.pi=0;S.early=false;S.scr='play';S.step=S.np>1?'pass':'ask';S.locked=false;S.o=opts(S.qs[0]);S.focus=1;break;
+ case 'ready':S.step='ask';S.focus=1;break;case 'pick':submit(S.o[+v]);return;case 'skip':submit(null);return;case 'say':try{speechSynthesis.speak(new SpeechSynthesisUtterance(S.qs[S.qi].t+'. '+S.qs[S.qi].c))}catch(e){}return;
+ case 'sub':{const r=parseDate($('#ans').value);S.txt=$('#ans').value;if(r.err){S.msg=r.err;S.cands=null;S.focus=1}else if(r.cands.length>1){S.cands=r.cands;S.msg='I found more than one possible date. Please choose one, or edit your text.'}else{if(S.ab.second&&!S.ab.sdone){S.ab.sdone=1;S.msg='Second Chance: check your answer. Edit it, or press Submit again to lock it in.';break}submit(r.cands[0]);return}break}
+ case 'cand':submit(S.cands[+v]);return;
+ case 'next':S.locked=false;S.pi++;if(S.pi===S.np){S.pi=0;S.qi++}if(S.qi===S.qs.length){finish(false);return}S.step=S.np>1?'pass':'ask';S.o=opts(S.qs[S.qi]);S.ab={};S.hints=[];S.msg='';S.focus=1;break;
+ case 'end':if(confirm('End the round now? Unanswered questions earn nothing.'))finish(true);return;
+ case 'tab':S.tab=v;S.msg='';break;case 'equip':P[KEY[IT.find(i=>i[0]===v)[2]]]=v;save();break;
+ case 'buy':{const i=IT.find(z=>z[0]===v);if(P.coins>=i[3]&&confirm('Buy '+i[1]+' for '+i[3]+' Pie Coins?')){P.coins-=i[3];P.own.push(v);P[KEY[i[2]]]=v;save();S.msg='Unlocked '+i[1]+'!';burst(24)}break}
+ case 'ab':{const a=AB.find(z=>z[0]===v),q=S.qs[S.qi];if(S.ab[v]||S.locked)return;if(P.ch[v]>0)P.ch[v]--;else if(P.coins>=a[3])P.coins-=a[3];else return;S.ab[v]=1;S.used.push(a[1]);
+  if(v==='lens')S.hints.push(`History Lens: topic is ${q.tp}, region is ${q.rg}.`);if(v==='decade')S.hints.push(`Decade Peek: it happened in the ${Math.floor(q.y/10)*10}s.`);
+  if(v==='compass'){const o=10+rnd(30),up=rnd(2);S.hints.push(`Chrono Compass: it was ${up?'later':'earlier'} than ${up?q.y-o:q.y+o}.`)}
+  if(v==='whisk'){const w=S.o.map((x,i)=>i).filter(i=>S.o[i].y!==q.y);S.o.splice(w[rnd(w.length)],1);S.hints.push('Option Whisk: one wrong choice is gone.')}
+  if(v==='second')S.hints.push('Second Chance ready: you can check your typed answer once.');if(v==='gold')S.hints.push('Golden Crust ready: a small bonus if you answer.');save();burst(8);break}
+ case 'again':act('start');return;case 'pie':st.pf.pie=v;save();break;case 'snd':st.pf.snd=!st.pf.snd;save();break;case 'anim':st.pf.anim=!st.pf.anim;save();break}
+ render()}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b&&!b.disabled)act(b.dataset.a,b.dataset.v)});
+document.addEventListener('input',e=>{if(e.target.dataset.n!==undefined)S.names[+e.target.dataset.n]=e.target.value});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='ans'){e.preventDefault();act('sub')}});
+render();
+</script></body></html>
